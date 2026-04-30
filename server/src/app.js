@@ -1,25 +1,31 @@
 const express = require('express')
-const cookieParser =require("cookie-parser")
-const app = express()
+const cookieParser = require("cookie-parser")
 const cors = require('cors');
-app.use(cors()); // Isse frontend backend se baat kar payega
+
+const app = express()
+
+// ✅ CORS FIX
+app.use(cors({
+  origin: "https://your-frontend.vercel.app",
+  credentials: true
+}));
+
 app.use(express.json())
 app.use(cookieParser())
 
-//Routes require
-const authRouter =require("./routes/auth.routes")
-const accountRouter =require("./routes/account.routes")
+// Routes require
+const authRouter = require("./routes/auth.routes")
+const accountRouter = require("./routes/account.routes")
 const transactionRoutes = require('./routes/transaction.routes')
 
-/**
- * use Routes
- */
-app.get("/",(req,res)=>{
-    res.send("Ledger Services is up and running")
+// Test route
+app.get("/", (req, res) => {
+  res.send("Ledger Services is up and running")
 })
-//user Routes
-app.use("/api/auth" ,authRouter)
-app.use("/api/account",accountRouter)
+
+// Routes
+app.use("/api/auth", authRouter)
+app.use("/api/account", accountRouter)
 app.use("/api/transactions", transactionRoutes)
 
 module.exports = app
