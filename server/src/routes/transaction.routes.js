@@ -15,32 +15,39 @@ const transactionRoutes = Router();
  * Fetch Ledger data for the logged-in user
  */
 transactionRoutes.get("/history", authMiddleware, async (req, res) => {
-    try {
-        const userId = req.user._id;
-        console.log("🔍 Searching transactions for User ID:", userId);
+  try {
+    const userId = req.user._id;
 
-        // ✅ FIX: Account _id se nahi, User _id se directly match karo
-        const transactions = await transactionModel.find({
-            $or: [
-                { fromAccount: userId },
-                { toAccount: userId }
-            ]
-        })
-        .sort({ createdAt: -1 })
-        .lean();
+    // ✅ Step 1: user ka account nikalo
+    const account = await accountModel.findOne({ user: userId });
 
-        console.log("✅ Transactions Found:", transactions.length);
-
-        res.json({
-            success: true,
-            transactions: transactions,
-            currentUserId: userId  // Frontend ke liye
-        });
-
-    } catch (error) {
-        console.error("Backend Error:", error);
-        res.status(500).json({ success: false, message: error.message });
+    if (!account) {
+      return res.status(404).json({
+        success: false,
+        message: "Account not found"
+      });
     }
+
+    // ✅ Step 2: account._id se transactions fetch karo
+    const transactions = await transactionModel.find({
+      $or: [
+        { fromAccount: account._id },
+        { toAccount: account._id }
+      ]
+    })
+    .sort({ createdAt: -1 })
+    .lean();
+
+    res.json({
+      success: true,
+      transactions,
+      currentUserId: userId
+    });
+
+  } catch (error) {
+    console.error("Backend Error:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
 });
 
 /**

@@ -1,8 +1,5 @@
 const mongoose =require('mongoose')
 
-
-
-
 const tokenBlackListschema =new mongoose.Schema({
     token:{
         type:String,

@@ -3,10 +3,10 @@ const express = require("express");
 const authController = require("../controllers/auth.controller");
 const tokenBlackListModel = require("../models/blacklist.model");
 const router = express.Router();
-
+const { authMiddleware } = require("../middlewares/auth.middlewares");
 
 // Blacklisted tokens dekhne ke liye (Admin/Testing ke liye)
-router.get('/blacklist-data', async (req, res) => {
+router.get('/blacklist-data', authMiddleware, async (req, res) => {
     try {
         const list = await tokenBlackListModel.find().sort({ createdAt: -1 });
         res.json({ success: true, list });

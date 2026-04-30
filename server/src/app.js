@@ -6,7 +6,7 @@ const app = express()
 
 // ✅ CORS FIX
 app.use(cors({
-  origin: "https://your-frontend.vercel.app",
+origin: "https://banktransaction-1.onrender.com",
   credentials: true
 }));
 

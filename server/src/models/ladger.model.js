@@ -1,7 +1,6 @@
 
-
 const mongoose = require("mongoose");
-// ✅ Removed unused/wrong import: { schema } from account.model
+
 
 const ledgerSchema = new mongoose.Schema({
     account: {
