@@ -1,7 +1,7 @@
 const path = require("path");
 require("dotenv").config(); // simple use karo
 
-console.log("MONGO_URI:", process.env.MONGO_URI);
+console.log("MongoDB URI loaded");
 
 const app = require("./src/app");
 const connectToDb = require("./src/config/db");
