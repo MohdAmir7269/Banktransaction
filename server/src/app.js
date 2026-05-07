@@ -19,7 +19,8 @@ app.set("trust proxy", 1);
 const allowedOrigins = [
   "http://localhost:5173",
   "http://localhost:5000",
-  "https://banktransaction-tau.vercel.app"
+  "https://banktransaction-sjyr.vercel.app",
+  "https://banktransaction-sqnd.vercel.app"  // ✅ yeh add kiya
 ];
    
 app.use(cors({
