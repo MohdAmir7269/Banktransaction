@@ -1,19 +1,35 @@
+
 const mongoose = require("mongoose");
 const transactionModel = require("../models/transaction.model");
 const accountModel = require("../models/account.model");
-const ledgerModel = require("../models/ladger.model");
+const ledgerModel = require("../models/ledger.model");
 
+/**
+ * ==========================================
+ * 💸 CREATE TRANSACTION (USER → USER)
+ * ==========================================
+ */
 exports.createTransaction = async (req, res) => {
-    const { fromAccount, toAccount, amount } = req.body;
+    const userId = req.user._id; // ✅ Logged-in user (sender)
+    const { toAccount, amount } = req.body;
 
-    console.log("🔥 Body received:", { fromAccount, toAccount, amount });
+    console.log("🔥 Request Body:", { userId, toAccount, amount });
 
-    if (!fromAccount || !toAccount || !amount) {
-        return res.status(400).json({ success: false, message: "fromAccount, toAccount and amount are required" });
+    // ✅ Validation
+    if (!toAccount || !amount) {
+        return res.status(400).json({
+            success: false,
+            message: "toAccount and amount are required"
+        });
     }
 
-    if (amount <= 0) {
-        return res.status(400).json({ success: false, message: "Amount must be > 0" });
+    const transferAmount = Number(amount);
+
+    if (isNaN(transferAmount) || transferAmount <= 0) {
+        return res.status(400).json({
+            success: false,
+            message: "Amount must be a valid number greater than 0"
+        });
     }
 
     const session = await mongoose.startSession();
@@ -21,71 +37,153 @@ exports.createTransaction = async (req, res) => {
     try {
         session.startTransaction();
 
-        const sender = await accountModel.findOne({ user: fromAccount }).session(session);
-        const receiver = await accountModel.findOne({ user: toAccount }).session(session);
+        /**
+         * ✅ IMPORTANT FIX
+         * Account query me userId use karo (NOT user)
+         */
+        const senderAccount = await accountModel
+            .findOne({ user: userId })
+            .session(session);
 
-        console.log("👤 Sender found:", sender?._id);
-        console.log("👤 Receiver found:", receiver?._id);
+        const receiverAccount = await accountModel
+            .findOne({ _id: toAccount })
+            .session(session);
 
-        if (!sender || !receiver) {
-            throw new Error("One or both accounts not found");
+        console.log("👤 Sender Account:", senderAccount?._id);
+        console.log("👤 Receiver Account:", receiverAccount?._id);
+
+        // ❌ Account exist check
+        if (!senderAccount || !receiverAccount) {
+            throw new Error("Sender or Receiver account not found");
         }
 
-        if (sender.balance < amount) {
-            throw new Error("Insufficient balance in sender account");
+        // ❌ Self transfer (account level pe check karo)
+        if (senderAccount._id.toString() === receiverAccount._id.toString()) {
+            throw new Error("Cannot transfer to your own account");
         }
 
-        // ✅ FIX: User _id store karo (history route se match hoga)
-        const [transaction] = await transactionModel.create([{
-            fromAccount: fromAccount,
-            toAccount: toAccount,
-            amount,
-            status: "PENDING",
-            idempotencyKey: `${fromAccount}-${toAccount}-${Date.now()}`
-        }], { session });
+        // ❌ Account status check
+        if (senderAccount.status !== "ACTIVE" || receiverAccount.status !== "ACTIVE") {
+            throw new Error("One or both accounts are not active");
+        }
 
-        // Ledger mein Account _id store karo (sahi hai)
-        await ledgerModel.create([
-            { account: sender._id, type: "DEBIT", amount, transaction: transaction._id },
-            { account: receiver._id, type: "CREDIT", amount, transaction: transaction._id }
-        ], { session, ordered: true });
+        // ❌ Balance check
+        if (senderAccount.balance < transferAmount) {
+            throw new Error("Insufficient balance");
+        }
 
-        sender.balance -= Number(amount);
-        receiver.balance += Number(amount);
+        /**
+         * ✅ Transaction create
+         */
+        const [transaction] = await transactionModel.create(
+            [
+                {
+                    fromAccount: senderAccount._id,
+                    toAccount: receiverAccount._id,
+                    amount: transferAmount,
+                    status: "PENDING",
+                    idempotencyKey: `${senderAccount._id}-${receiverAccount._id}-${Date.now()}`
+                }
+            ],
+            { session }
+        );
 
-        await sender.save({ session });
-        await receiver.save({ session });
+        /**
+         * ✅ Ledger entries
+         */
+        await ledgerModel.create(
+            [
+                {
+                    account: senderAccount._id,
+                    type: "DEBIT",
+                    amount: transferAmount,
+                    transaction: transaction._id
+                },
+                {
+                    account: receiverAccount._id,
+                    type: "CREDIT",
+                    amount: transferAmount,
+                    transaction: transaction._id
+                }
+            ],
+            { session,ordered:true }
+        );
 
+        /**
+         * ✅ Balance update
+         */
+        senderAccount.balance -= transferAmount;
+        receiverAccount.balance += transferAmount;
+
+        await senderAccount.save({ session });
+        await receiverAccount.save({ session });
+
+        /**
+         * ✅ Final status update
+         */
         transaction.status = "COMPLETED";
         await transaction.save({ session });
 
         await session.commitTransaction();
 
-        return res.status(201).json({ success: true, message: "Transfer Successful", transaction });
+        return res.status(201).json({
+            success: true,
+            message: "✅ Transfer Successful",
+            transaction
+        });
 
     } catch (error) {
         await session.abortTransaction();
+
         console.error("❌ Transaction Error:", error.message);
-        return res.status(500).json({ success: false, message: error.message });
+
+        return res.status(500).json({
+            success: false,
+            message: error.message
+        });
     } finally {
         session.endSession();
     }
 };
 
+
+
+/**
+ * ==========================================
+ * 💰 SYSTEM → USER (INITIAL FUNDS)
+ * ==========================================
+ */
 exports.createInitialFundsTransaction = async (req, res) => {
     const { toAccount, amount, idempotencyKey } = req.body;
 
+    console.log("💰 Initial Fund Request:", { toAccount, amount });
+
+    // ✅ Validation
     if (!toAccount || !amount || !idempotencyKey) {
-        return res.status(400).json({ success: false, message: "toAccount, amount and idempotencyKey are required" });
+        return res.status(400).json({
+            success: false,
+            message: "toAccount, amount and idempotencyKey are required"
+        });
     }
 
-    if (amount <= 0) {
-        return res.status(400).json({ success: false, message: "Amount must be > 0" });
+    const fundAmount = Number(amount);
+
+    if (isNaN(fundAmount) || fundAmount <= 0) {
+        return res.status(400).json({
+            success: false,
+            message: "Amount must be greater than 0"
+        });
     }
 
+    // ✅ Duplicate transaction protection
     const existingTxn = await transactionModel.findOne({ idempotencyKey });
+
     if (existingTxn) {
-        return res.status(200).json({ success: true, message: "Transaction already processed", transaction: existingTxn });
+        return res.status(200).json({
+            success: true,
+            message: "Transaction already processed",
+            transaction: existingTxn
+        });
     }
 
     const session = await mongoose.startSession();
@@ -93,40 +191,87 @@ exports.createInitialFundsTransaction = async (req, res) => {
     try {
         session.startTransaction();
 
-        const toUserAccount = await accountModel.findById(toAccount).session(session);
-        const systemAccount = await accountModel.findOne({ systemUser: true }).session(session);
+        /**
+         * ✅ Receiver account (by accountId)
+         */
+        const receiverAccount = await accountModel
+            .findById(toAccount)
+            .session(session);
 
-        if (!toUserAccount || !systemAccount) {
-            throw new Error("Accounts not found");
+        /**
+         * ✅ System account
+         */
+        const systemAccount = await accountModel
+            .findOne({ systemUser: true })
+            .session(session);
+
+        if (!receiverAccount || !systemAccount) {
+            throw new Error("Receiver or System account not found");
         }
 
-        const [transaction] = await transactionModel.create([{
-            fromAccount: systemAccount._id,
-            toAccount: toUserAccount._id,
-            amount,
-            idempotencyKey,
-            status: "COMPLETED"
-        }], { session });
+        /**
+         * ✅ Create transaction
+         */
+        const [transaction] = await transactionModel.create(
+            [
+                {
+                    fromAccount: systemAccount._id,
+                    toAccount: receiverAccount._id,
+                    amount: fundAmount,
+                    idempotencyKey,
+                    status: "COMPLETED"
+                }
+            ],
+            { session }
+        );
 
-        await ledgerModel.create([
-            { account: systemAccount._id, type: "DEBIT", amount, transaction: transaction._id },
-            { account: toUserAccount._id, type: "CREDIT", amount, transaction: transaction._id }
-        ], { session, ordered: true });
+        /**
+         * ✅ Ledger
+         */
+        await ledgerModel.create(
+            [
+                {
+                    account: systemAccount._id,
+                    type: "DEBIT",
+                    amount: fundAmount,
+                    transaction: transaction._id
+                },
+                {
+                    account: receiverAccount._id,
+                    type: "CREDIT",
+                    amount: fundAmount,
+                    transaction: transaction._id
+                }
+            ],
+            { session }
+        );
 
-        systemAccount.balance -= Number(amount);
-        toUserAccount.balance += Number(amount);
+        /**
+         * ✅ Balance update
+         */
+        systemAccount.balance -= fundAmount;
+        receiverAccount.balance += fundAmount;
 
         await systemAccount.save({ session });
-        await toUserAccount.save({ session });
+        await receiverAccount.save({ session });
 
         await session.commitTransaction();
 
-        res.status(201).json({ success: true, message: "Initial funds added successfully", transaction });
+        return res.status(201).json({
+            success: true,
+            message: "✅ Initial funds added successfully",
+            transaction
+        });
 
     } catch (error) {
         await session.abortTransaction();
+
         console.error("❌ Initial Funds Error:", error.message);
-        res.status(500).json({ success: false, message: error.message });
+
+        return res.status(500).json({
+            success: false,
+            message: error.message
+        });
     } finally {
         session.endSession();
     }

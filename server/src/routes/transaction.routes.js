@@ -1,10 +1,6 @@
-
-
 const { Router } = require("express");
 const { authMiddleware, authSystemUserMiddleware } = require("../middlewares/auth.middlewares");
 const transactionController = require("../controllers/transaction.controller");
-
-// ⚠️ YE LINE ADD KAREIN (Check your model path)
 const transactionModel = require("../models/transaction.model"); 
 const accountModel = require("../models/account.model");
 
@@ -12,13 +8,12 @@ const transactionRoutes = Router();
 
 /**
  * GET /api/transactions/history
- * Fetch Ledger data for the logged-in user
  */
 transactionRoutes.get("/history", authMiddleware, async (req, res) => {
   try {
     const userId = req.user._id;
 
-    // ✅ Step 1: user ka account nikalo
+    // ✅ FIXED: userId → user
     const account = await accountModel.findOne({ user: userId });
 
     if (!account) {
@@ -28,7 +23,6 @@ transactionRoutes.get("/history", authMiddleware, async (req, res) => {
       });
     }
 
-    // ✅ Step 2: account._id se transactions fetch karo
     const transactions = await transactionModel.find({
       $or: [
         { fromAccount: account._id },
@@ -50,18 +44,8 @@ transactionRoutes.get("/history", authMiddleware, async (req, res) => {
   }
 });
 
-/**
- * POST /api/transactions/
- */
-transactionRoutes.post(
-  "/",
-  authMiddleware,
-  transactionController.createTransaction
-);
+transactionRoutes.post("/", authMiddleware, transactionController.createTransaction);
 
-/**
- * POST /api/transactions/system/initial-funds
- */
 transactionRoutes.post(
   "/system/initial-funds",
   authMiddleware,

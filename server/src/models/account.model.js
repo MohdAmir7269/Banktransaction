@@ -1,6 +1,6 @@
 
 const mongoose = require("mongoose");
-const ledgerModel = require("./ladger.model"); // Spelling check: ladger vs ledger
+const ledgerModel = require("./ledger.model"); // Spelling check: ladger vs ledger
 
 const accountSchema = new mongoose.Schema({
     user: {
